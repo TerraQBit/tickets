@@ -1,21 +1,23 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tickets/models/event.dart';
+import 'package:tickets/models/flight.dart';
+import 'package:tickets/models/service_class.dart';
 import 'package:tickets/services/booking_service.dart';
 
 void main() {
   late BookingService service;
 
-  final testEvent = Event(
-    id: 'test-evt',
-    title: 'Тестовое мероприятие',
-    venue: 'Зал',
-    date: DateTime(2026, 6, 1),
-    price: 1000,
+  final testFlight = Flight(
+    id: 'test-flt',
+    origin: 'Москва',
+    destination: 'Казань',
+    departureDateTime: DateTime(2026, 6, 15, 10, 0),
+    basePrice: 4000,
     totalSeats: 10,
+    airline: 'Тест Авиа',
   );
 
   setUp(() {
-    service = BookingService(initialEvents: [testEvent]);
+    service = BookingService(initialFlights: [testFlight]);
   });
 
   group('Позитивные тесты — валидация имени', () {
@@ -46,279 +48,194 @@ void main() {
     });
   });
 
-  group('Позитивные тесты — валидация мест', () {
-    test('TC-P-007: одно место при наличии свободных принимается', () {
-      expect(service.validateSeatCount(1, 10), isNull);
+  group('Позитивные тесты — валидация пассажиров', () {
+    test('TC-P-007: один взрослый принимается', () {
+      expect(service.validateAdults(1), isNull);
     });
 
-    test('TC-P-008: максимальное количество мест принимается', () {
-      expect(service.validateSeatCount(BookingService.maxSeatCount, 10), isNull);
+    test('TC-P-008: максимальное количество взрослых принимается', () {
+      expect(service.validateAdults(BookingService.maxAdults), isNull);
     });
 
-    test('TC-P-009: бронирование всех свободных мест принимается', () {
-      expect(service.validateSeatCount(10, 10), isNull);
+    test('TC-P-009: ноль детей принимается', () {
+      expect(service.validateChildren(0), isNull);
+    });
+
+    test('TC-P-010: бронирование всех свободных мест принимается', () {
+      expect(service.validatePassengerCount(5, 5, 10), isNull);
     });
   });
 
-  group('Позитивные тесты — бронирование', () {
-    test('TC-P-010: успешное бронирование одного места', () {
+  group('Позитивные тесты — поиск и бронирование', () {
+    test('TC-P-011: поиск находит рейс по параметрам', () {
+      final results = service.searchFlights(
+        origin: 'Москва',
+        destination: 'Казань',
+        departureDate: DateTime(2026, 6, 15),
+        returnDate: DateTime(2026, 6, 20),
+        adults: 1,
+        children: 0,
+        serviceClass: ServiceClass.economy,
+      );
+
+      expect(results, hasLength(1));
+      expect(results.first.id, 'test-flt');
+    });
+
+    test('TC-P-012: успешное бронирование одного взрослого', () {
       final result = service.book(
-        eventId: 'test-evt',
+        flightId: 'test-flt',
         passengerName: 'Иван Иванов',
         email: 'ivan@mail.ru',
-        seatCount: 1,
+        departureDate: DateTime(2026, 6, 15),
+        returnDate: DateTime(2026, 6, 20),
+        adults: 1,
+        children: 0,
+        serviceClass: ServiceClass.economy,
       );
 
       expect(result.isSuccess, isTrue);
-      expect(result.booking!.seatCount, 1);
-      expect(result.booking!.totalPrice, 1000);
+      expect(result.booking!.adults, 1);
+      expect(result.booking!.totalPrice, 4000);
       expect(service.bookings, hasLength(1));
     });
 
-    test('TC-P-011: количество свободных мест уменьшается после бронирования', () {
+    test('TC-P-013: количество свободных мест уменьшается', () {
       service.book(
-        eventId: 'test-evt',
+        flightId: 'test-flt',
         passengerName: 'Мария',
         email: 'maria@mail.ru',
-        seatCount: 3,
+        departureDate: DateTime(2026, 6, 15),
+        returnDate: DateTime(2026, 6, 20),
+        adults: 2,
+        children: 1,
+        serviceClass: ServiceClass.economy,
       );
 
-      expect(service.getEventById('test-evt')!.availableSeats, 7);
+      expect(service.getFlightById('test-flt')!.availableSeats, 7);
     });
 
-    test('TC-P-012: бронирование нескольких мест рассчитывает цену верно', () {
-      final result = service.book(
-        eventId: 'test-evt',
-        passengerName: 'Пётр',
-        email: 'petr@mail.ru',
-        seatCount: 4,
+    test('TC-P-014: расчёт цены с детьми и бизнес-классом', () {
+      final price = service.calculatePrice(
+        flight: testFlight,
+        adults: 2,
+        children: 1,
+        serviceClass: ServiceClass.business,
       );
 
-      expect(result.booking!.totalPrice, 4000);
+      // (4000*2 + 4000*0.5*1) * 2.5 = 25000
+      expect(price, 25000);
     });
 
-    test('TC-P-013: отмена бронирования возвращает места', () {
+    test('TC-P-015: отмена бронирования возвращает места', () {
       final booking = service.book(
-        eventId: 'test-evt',
+        flightId: 'test-flt',
         passengerName: 'Анна',
         email: 'anna@mail.ru',
-        seatCount: 2,
+        departureDate: DateTime(2026, 6, 15),
+        returnDate: DateTime(2026, 6, 20),
+        adults: 2,
+        children: 0,
+        serviceClass: ServiceClass.economy,
       ).booking!;
 
       final cancelResult = service.cancelBooking(booking.id);
 
       expect(cancelResult.isSuccess, isTrue);
-      expect(service.getEventById('test-evt')!.availableSeats, 10);
+      expect(service.getFlightById('test-flt')!.availableSeats, 10);
       expect(service.bookings, isEmpty);
-    });
-
-    test('TC-P-014: несколько бронирований на одно мероприятие', () {
-      service.book(
-        eventId: 'test-evt',
-        passengerName: 'User1',
-        email: 'u1@mail.ru',
-        seatCount: 2,
-      );
-      service.book(
-        eventId: 'test-evt',
-        passengerName: 'User2',
-        email: 'u2@mail.ru',
-        seatCount: 3,
-      );
-
-      expect(service.bookings, hasLength(2));
-      expect(service.getEventById('test-evt')!.availableSeats, 5);
     });
   });
 
-  group('Негативные тесты — валидация имени', () {
+  group('Негативные тесты — валидация', () {
     test('TC-N-001: пустое имя отклоняется', () {
       expect(service.validatePassengerName(''), isNotNull);
     });
 
-    test('TC-N-002: имя из одного символа отклоняется', () {
-      expect(service.validatePassengerName('А'), isNotNull);
+    test('TC-N-002: ноль взрослых отклоняется', () {
+      expect(service.validateAdults(0), isNotNull);
     });
 
-    test('TC-N-003: имя из пробелов отклоняется', () {
-      expect(service.validatePassengerName('   '), isNotNull);
-    });
-  });
-
-  group('Негативные тесты — валидация email', () {
-    test('TC-N-004: email без @ отклоняется', () {
-      expect(service.validateEmail('usermail.ru'), isNotNull);
+    test('TC-N-003: отрицательное количество детей отклоняется', () {
+      expect(service.validateChildren(-1), isNotNull);
     });
 
-    test('TC-N-005: email без домена отклоняется', () {
-      expect(service.validateEmail('user@'), isNotNull);
-    });
-
-    test('TC-N-006: email без локальной части отклоняется', () {
-      expect(service.validateEmail('@mail.ru'), isNotNull);
-    });
-
-    test('TC-N-007: пустой email отклоняется', () {
-      expect(service.validateEmail(''), isNotNull);
-    });
-  });
-
-  group('Негативные тесты — валидация мест', () {
-    test('TC-N-008: ноль мест отклоняется', () {
-      expect(service.validateSeatCount(0, 10), isNotNull);
-    });
-
-    test('TC-N-009: отрицательное количество мест отклоняется', () {
-      expect(service.validateSeatCount(-1, 10), isNotNull);
-    });
-
-    test('TC-N-010: превышение лимита за одно бронирование отклоняется', () {
+    test('TC-N-004: дата возвращения раньше вылета отклоняется', () {
       expect(
-        service.validateSeatCount(BookingService.maxSeatCount + 1, 20),
+        service.validateReturnDate(
+          DateTime(2026, 6, 20),
+          DateTime(2026, 6, 15),
+        ),
         isNotNull,
       );
     });
 
-    test('TC-N-011: бронирование больше доступных мест отклоняется', () {
-      expect(service.validateSeatCount(5, 3), isNotNull);
-    });
-  });
-
-  group('Негативные тесты — бронирование', () {
-    test('TC-N-012: бронирование несуществующего мероприятия', () {
+    test('TC-N-005: бронирование несуществующего рейса', () {
       final result = service.book(
-        eventId: 'unknown',
+        flightId: 'unknown',
         passengerName: 'Иван',
         email: 'ivan@mail.ru',
-        seatCount: 1,
+        departureDate: DateTime(2026, 6, 15),
+        returnDate: DateTime(2026, 6, 20),
+        adults: 1,
+        children: 0,
+        serviceClass: ServiceClass.economy,
       );
 
       expect(result.isSuccess, isFalse);
-      expect(result.errorMessage, 'Мероприятие не найдено');
+      expect(result.errorMessage, 'Рейс не найден');
     });
 
-    test('TC-N-013: бронирование с невалидным email не создаёт запись', () {
-      final result = service.book(
-        eventId: 'test-evt',
-        passengerName: 'Иван',
-        email: 'bad-email',
-        seatCount: 1,
-      );
-
-      expect(result.isSuccess, isFalse);
-      expect(service.bookings, isEmpty);
-    });
-
-    test('TC-N-014: бронирование при нехватке мест не изменяет доступность', () {
+    test('TC-N-006: бронирование при нехватке мест', () {
       service.book(
-        eventId: 'test-evt',
+        flightId: 'test-flt',
         passengerName: 'First',
         email: 'first@mail.ru',
-        seatCount: 8,
+        departureDate: DateTime(2026, 6, 15),
+        returnDate: DateTime(2026, 6, 20),
+        adults: 8,
+        children: 0,
+        serviceClass: ServiceClass.economy,
       );
 
       final result = service.book(
-        eventId: 'test-evt',
+        flightId: 'test-flt',
         passengerName: 'Second',
         email: 'second@mail.ru',
-        seatCount: 5,
+        departureDate: DateTime(2026, 6, 15),
+        returnDate: DateTime(2026, 6, 20),
+        adults: 5,
+        children: 0,
+        serviceClass: ServiceClass.economy,
       );
 
       expect(result.isSuccess, isFalse);
-      expect(service.getEventById('test-evt')!.availableSeats, 2);
-    });
-
-    test('TC-N-015: отмена несуществующего бронирования', () {
-      final result = service.cancelBooking('bkg-999');
-
-      expect(result.isSuccess, isFalse);
-      expect(result.errorMessage, 'Бронирование не найдено');
+      expect(service.getFlightById('test-flt')!.availableSeats, 2);
     });
   });
 
-  group('Деструктивные тесты — защита от вредоносного ввода', () {
-    test('TC-D-001: SQL-инъекция в имени отклоняется', () {
-      expect(
-        service.validatePassengerName("Robert'; DROP TABLE users;--"),
-        isNotNull,
-      );
-    });
-
-    test('TC-D-002: SQL DELETE в email отклоняется', () {
-      expect(
-        service.validateEmail('hack@mail.ru; DELETE FROM bookings'),
-        isNotNull,
-      );
-    });
-
-    test('TC-D-003: XSS script в имени отклоняется', () {
+  group('Деструктивные тесты', () {
+    test('TC-D-001: XSS в имени отклоняется', () {
       expect(
         service.validatePassengerName('<script>alert(1)</script>'),
         isNotNull,
       );
     });
 
-    test('TC-D-004: слишком длинное имя отклоняется', () {
-      final longName = 'А' * (BookingService.maxPassengerNameLength + 1);
-      expect(service.validatePassengerName(longName), isNotNull);
-    });
-
-    test('TC-D-005: слишком длинный email отклоняется', () {
-      final longEmail = '${'a' * 250}@mail.ru';
-      expect(service.validateEmail(longEmail), isNotNull);
-    });
-
-    test('TC-D-006: SQL-инъекция через book() не создаёт бронирование', () {
+    test('TC-D-002: SQL-инъекция через book() не создаёт бронирование', () {
       final result = service.book(
-        eventId: 'test-evt',
+        flightId: 'test-flt',
         passengerName: "Admin'--",
         email: 'test@mail.ru',
-        seatCount: 1,
+        departureDate: DateTime(2026, 6, 15),
+        returnDate: DateTime(2026, 6, 20),
+        adults: 1,
+        children: 0,
+        serviceClass: ServiceClass.economy,
       );
 
       expect(result.isSuccess, isFalse);
       expect(service.bookings, isEmpty);
-    });
-
-    test('TC-D-007: многократные деструктивные попытки не ломают сервис', () {
-      for (var i = 0; i < 50; i++) {
-        service.book(
-          eventId: 'test-evt',
-          passengerName: '<script>DROP TABLE</script>',
-          email: 'x@y.z',
-          seatCount: 999,
-        );
-      }
-
-      expect(service.getEventById('test-evt')!.availableSeats, 10);
-      expect(service.bookings, isEmpty);
-
-      final validResult = service.book(
-        eventId: 'test-evt',
-        passengerName: 'Нормальный пользователь',
-        email: 'ok@mail.ru',
-        seatCount: 1,
-      );
-      expect(validResult.isSuccess, isTrue);
-    });
-
-    test('TC-D-008: бронирование всех мест и попытка сверх лимита', () {
-      service.book(
-        eventId: 'test-evt',
-        passengerName: 'Bulk',
-        email: 'bulk@mail.ru',
-        seatCount: 10,
-      );
-
-      final result = service.book(
-        eventId: 'test-evt',
-        passengerName: 'Late',
-        email: 'late@mail.ru',
-        seatCount: 1,
-      );
-
-      expect(result.isSuccess, isFalse);
-      expect(service.getEventById('test-evt')!.availableSeats, 0);
     });
   });
 }

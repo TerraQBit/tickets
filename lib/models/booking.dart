@@ -1,19 +1,31 @@
+import 'service_class.dart';
+
 class Booking {
   const Booking({
     required this.id,
-    required this.eventId,
+    required this.flightId,
     required this.passengerName,
     required this.email,
-    required this.seatCount,
+    required this.departureDate,
+    required this.returnDate,
+    required this.adults,
+    required this.children,
+    required this.serviceClass,
     required this.totalPrice,
     required this.createdAt,
   });
 
   final String id;
-  final String eventId;
+  final String flightId;
   final String passengerName;
   final String email;
-  final int seatCount;
+  final DateTime departureDate;
+  final DateTime returnDate;
+  final int adults;
+  final int children;
+  final ServiceClass serviceClass;
   final double totalPrice;
   final DateTime createdAt;
+
+  int get totalPassengers => adults + children;
 }

@@ -1,56 +1,131 @@
 import '../models/booking.dart';
 import '../models/booking_result.dart';
-import '../models/event.dart';
+import '../models/flight.dart';
+import '../models/service_class.dart';
 
-/// Сервис бронирования билетов с валидацией входных данных.
+/// Сервис поиска и бронирования авиабилетов.
 class BookingService {
-  BookingService({List<Event>? initialEvents})
-      : _events = List<Event>.from(initialEvents ?? defaultEvents);
+  BookingService({List<Flight>? initialFlights})
+      : _flights = List<Flight>.from(initialFlights ?? defaultFlights);
 
   static const int maxPassengerNameLength = 100;
   static const int maxEmailLength = 254;
-  static const int maxSeatCount = 10;
+  static const int maxAdults = 9;
+  static const int maxChildren = 9;
+  static const double childPriceRatio = 0.5;
 
-  static final List<Event> defaultEvents = [
-    Event(
-      id: 'evt-1',
-      title: 'Концерт симфонического оркестра',
-      venue: 'Большой зал',
-      date: DateTime(2026, 6, 15, 19, 0),
-      price: 1500,
-      totalSeats: 50,
+  static final List<Flight> defaultFlights = [
+    Flight(
+      id: 'flt-1',
+      origin: 'Москва',
+      destination: 'Санкт-Петербург',
+      departureDateTime: DateTime(2026, 6, 15, 8, 30),
+      basePrice: 4500,
+      totalSeats: 120,
+      airline: 'Аэрофлот',
     ),
-    Event(
-      id: 'evt-2',
-      title: 'Спектакль «Евгений Онегин»',
-      venue: 'Театр драмы',
-      date: DateTime(2026, 6, 20, 18, 30),
-      price: 2200,
-      totalSeats: 30,
+    Flight(
+      id: 'flt-2',
+      origin: 'Москва',
+      destination: 'Санкт-Петербург',
+      departureDateTime: DateTime(2026, 6, 15, 18, 45),
+      basePrice: 5200,
+      totalSeats: 100,
+      airline: 'S7 Airlines',
     ),
-    Event(
-      id: 'evt-3',
-      title: 'Джазовый вечер',
-      venue: 'Клуб «Blue Note»',
-      date: DateTime(2026, 7, 1, 20, 0),
-      price: 900,
-      totalSeats: 20,
+    Flight(
+      id: 'flt-3',
+      origin: 'Санкт-Петербург',
+      destination: 'Москва',
+      departureDateTime: DateTime(2026, 6, 20, 10, 0),
+      basePrice: 4800,
+      totalSeats: 110,
+      airline: 'Аэрофлот',
+    ),
+    Flight(
+      id: 'flt-4',
+      origin: 'Москва',
+      destination: 'Казань',
+      departureDateTime: DateTime(2026, 6, 15, 14, 15),
+      basePrice: 3800,
+      totalSeats: 80,
+      airline: 'Победа',
+    ),
+    Flight(
+      id: 'flt-5',
+      origin: 'Казань',
+      destination: 'Москва',
+      departureDateTime: DateTime(2026, 6, 22, 16, 30),
+      basePrice: 3900,
+      totalSeats: 80,
+      airline: 'Победа',
+    ),
+    Flight(
+      id: 'flt-6',
+      origin: 'Москва',
+      destination: 'Сочи',
+      departureDateTime: DateTime(2026, 7, 1, 6, 0),
+      basePrice: 6500,
+      totalSeats: 150,
+      airline: 'Аэрофлот',
     ),
   ];
 
-  final List<Event> _events;
+  final List<Flight> _flights;
   final List<Booking> _bookings = [];
   int _bookingCounter = 0;
 
-  List<Event> get events => List.unmodifiable(_events);
+  List<Flight> get flights => List.unmodifiable(_flights);
   List<Booking> get bookings => List.unmodifiable(_bookings);
 
-  Event? getEventById(String eventId) {
+  List<String> get cities {
+    final set = <String>{};
+    for (final flight in _flights) {
+      set.add(flight.origin);
+      set.add(flight.destination);
+    }
+    return set.toList()..sort();
+  }
+
+  Flight? getFlightById(String flightId) {
     try {
-      return _events.firstWhere((e) => e.id == eventId);
+      return _flights.firstWhere((f) => f.id == flightId);
     } catch (_) {
       return null;
     }
+  }
+
+  List<Flight> searchFlights({
+    required String origin,
+    required String destination,
+    required DateTime departureDate,
+    required DateTime returnDate,
+    required int adults,
+    required int children,
+    required ServiceClass serviceClass,
+  }) {
+    final passengers = adults + children;
+    final departureDay = _dateOnly(departureDate);
+
+    return _flights.where((flight) {
+      return flight.origin == origin &&
+          flight.destination == destination &&
+          _dateOnly(flight.departureDateTime) == departureDay &&
+          flight.availableSeats >= passengers;
+    }).toList();
+  }
+
+  double calculatePrice({
+    required Flight flight,
+    required int adults,
+    required int children,
+    required ServiceClass serviceClass,
+  }) {
+    final multiplier = serviceClass.priceMultiplier;
+    final adultTotal = flight.basePrice * adults * multiplier;
+    final childTotal =
+        flight.basePrice * childPriceRatio * children * multiplier;
+    return adultTotal + childTotal;
   }
 
   String? validatePassengerName(String name) {
@@ -88,28 +163,61 @@ class BookingService {
     return null;
   }
 
-  String? validateSeatCount(int seatCount, int availableSeats) {
-    if (seatCount <= 0) {
-      return 'Количество мест должно быть больше 0';
+  String? validateAdults(int adults) {
+    if (adults <= 0) {
+      return 'Укажите хотя бы одного взрослого';
     }
-    if (seatCount > maxSeatCount) {
-      return 'Максимум $maxSeatCount мест за одно бронирование';
+    if (adults > maxAdults) {
+      return 'Максимум $maxAdults взрослых';
     }
-    if (seatCount > availableSeats) {
-      return 'Недостаточно свободных мест (доступно: $availableSeats)';
+    return null;
+  }
+
+  String? validateChildren(int children) {
+    if (children < 0) {
+      return 'Количество детей не может быть отрицательным';
+    }
+    if (children > maxChildren) {
+      return 'Максимум $maxChildren детей';
+    }
+    return null;
+  }
+
+  String? validatePassengerCount(int adults, int children, int availableSeats) {
+    final adultsError = validateAdults(adults);
+    if (adultsError != null) return adultsError;
+
+    final childrenError = validateChildren(children);
+    if (childrenError != null) return childrenError;
+
+    final total = adults + children;
+    if (total > availableSeats) {
+      return 'Недостаточно мест (доступно: $availableSeats)';
+    }
+  }
+
+  String? validateReturnDate(DateTime departureDate, DateTime returnDate) {
+    final dep = _dateOnly(departureDate);
+    final ret = _dateOnly(returnDate);
+    if (ret.isBefore(dep)) {
+      return 'Дата возвращения не может быть раньше даты вылета';
     }
     return null;
   }
 
   BookingResult book({
-    required String eventId,
+    required String flightId,
     required String passengerName,
     required String email,
-    required int seatCount,
+    required DateTime departureDate,
+    required DateTime returnDate,
+    required int adults,
+    required int children,
+    required ServiceClass serviceClass,
   }) {
-    final event = getEventById(eventId);
-    if (event == null) {
-      return const BookingResult.failure('Мероприятие не найдено');
+    final flight = getFlightById(flightId);
+    if (flight == null) {
+      return const BookingResult.failure('Рейс не найден');
     }
 
     final nameError = validatePassengerName(passengerName);
@@ -122,24 +230,41 @@ class BookingService {
       return BookingResult.failure(emailError);
     }
 
-    final seatError = validateSeatCount(seatCount, event.availableSeats);
-    if (seatError != null) {
-      return BookingResult.failure(seatError);
+    final returnError = validateReturnDate(departureDate, returnDate);
+    if (returnError != null) {
+      return BookingResult.failure(returnError);
     }
+
+    final countError =
+        validatePassengerCount(adults, children, flight.availableSeats);
+    if (countError != null) {
+      return BookingResult.failure(countError);
+    }
+
+    final totalPrice = calculatePrice(
+      flight: flight,
+      adults: adults,
+      children: children,
+      serviceClass: serviceClass,
+    );
 
     _bookingCounter++;
     final booking = Booking(
       id: 'bkg-$_bookingCounter',
-      eventId: eventId,
+      flightId: flightId,
       passengerName: passengerName.trim(),
       email: email.trim(),
-      seatCount: seatCount,
-      totalPrice: event.price * seatCount,
+      departureDate: _dateOnly(departureDate),
+      returnDate: _dateOnly(returnDate),
+      adults: adults,
+      children: children,
+      serviceClass: serviceClass,
+      totalPrice: totalPrice,
       createdAt: DateTime.now(),
     );
 
     _bookings.add(booking);
-    _updateAvailableSeats(eventId, event.availableSeats - seatCount);
+    _updateAvailableSeats(flightId, flight.availableSeats - adults - children);
 
     return BookingResult.success(booking);
   }
@@ -151,11 +276,11 @@ class BookingService {
     }
 
     final booking = _bookings[index];
-    final event = getEventById(booking.eventId);
-    if (event != null) {
+    final flight = getFlightById(booking.flightId);
+    if (flight != null) {
       _updateAvailableSeats(
-        booking.eventId,
-        event.availableSeats + booking.seatCount,
+        booking.flightId,
+        flight.availableSeats + booking.totalPassengers,
       );
     }
 
@@ -181,10 +306,13 @@ class BookingService {
     return false;
   }
 
-  void _updateAvailableSeats(String eventId, int newCount) {
-    final index = _events.indexWhere((e) => e.id == eventId);
+  DateTime _dateOnly(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
+
+  void _updateAvailableSeats(String flightId, int newCount) {
+    final index = _flights.indexWhere((f) => f.id == flightId);
     if (index != -1) {
-      _events[index] = _events[index].copyWith(availableSeats: newCount);
+      _flights[index] = _flights[index].copyWith(availableSeats: newCount);
     }
   }
 }
